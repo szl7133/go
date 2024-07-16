@@ -1,5 +1,0 @@
-.gitignore
-client.go
-go.mod/
-ReadMe
-server.go
