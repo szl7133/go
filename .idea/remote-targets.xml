@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="RemoteTargetsManager">
+    <targets>
+      <target name="root@192.168.1.212:22" type="ssh/sftp" uuid="c9fe74c4-6b09-4ec6-bd77-24452802ac62">
+        <config>
+          <option name="projectRootOnTarget" value="/root/szl" />
+          <option name="serverName" value="root@192.168.1.212:22 password" />
+        </config>
+        <ContributedStateBase type="GoLanguageRuntime">
+          <config>
+            <option name="goPath" value="/bin/bash: /usr/bin/which: no go in (/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/root/bin): 没有那个文件或目录" />
+            <option name="goRoot" value="/usr/bin/which: no go in (/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/root/bin)" />
+            <option name="goVersion" value="/bin/bash: /usr/bin/which: no go in (/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/root/bin): 没有那个文件或目录" />
+          </config>
+        </ContributedStateBase>
+      </target>
+    </targets>
+  </component>
+</project>
