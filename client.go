@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/host"
@@ -19,8 +20,8 @@ type LogEntry struct {
 	MemInfo     map[string]string   `json:"内存信息"`
 	HostInfo    map[string]string   `json:"主机信息"`
 	CPUInfo     []map[string]string `json:"CPU信息"`
-	DiskInfo    []map[string]string `json:"磁盘信息"`
-	DiskIOInfo  []map[string]string `json:"磁盘I/O信息"`
+	DiskInfo    string              `json:"磁盘信息"`    // JSON string
+	DiskIOInfo  string              `json:"磁盘I/O信息"` // JSON string
 }
 
 // 获取内存信息
@@ -130,8 +131,6 @@ func handerUnit(value uint64, unit int, unitStr string) string {
 }
 
 func main() {
-	serverURL := "http://127.0.0.1:8080/log"
-
 	for {
 		// 获取当前时间
 		currentTime := time.Now().Format("2006-01-02 15:04:05")
@@ -147,10 +146,10 @@ func main() {
 		cpuInfo := getCpuInfo(fmt.Sprintf("%.2f", cpuPercents[0]))
 
 		// 获取磁盘信息
-		diskInfo := getDiskInfo()
+		diskInfo, _ := json.Marshal(getDiskInfo())
 
 		// 获取磁盘I/O信息
-		diskIOInfo := getDiskIOInfo()
+		diskIOInfo, _ := json.Marshal(getDiskIOInfo())
 
 		// 构建LogEntry对象
 		logEntry := LogEntry{
@@ -158,31 +157,29 @@ func main() {
 			MemInfo:     memInfo,
 			HostInfo:    hostInfo,
 			CPUInfo:     cpuInfo,
-			DiskInfo:    diskInfo,
-			DiskIOInfo:  diskIOInfo,
+			DiskInfo:    string(diskInfo),
+			DiskIOInfo:  string(diskIOInfo),
 		}
 
 		// 将LogEntry对象转换为JSON
 		logEntryJSON, err := json.Marshal(logEntry)
 		if err != nil {
 			fmt.Printf("json marshal failed, err:%v\n", err)
-			time.Sleep(15 * time.Second)
-			continue
+			return
 		}
 
 		// 发送HTTP POST请求
-		resp, err := http.Post(serverURL, "application/json", bytes.NewBuffer(logEntryJSON))
+		resp, err := http.Post("http://127.0.0.1:8080/log", "application/json", bytes.NewBuffer(logEntryJSON))
 		if err != nil {
 			fmt.Printf("send post request failed, err:%v\n", err)
-			time.Sleep(15 * time.Second)
-			continue
+			return
 		}
 		defer resp.Body.Close()
 
 		// 打印响应状态
 		fmt.Println("Response status:", resp.Status)
 
+		// 等待15秒
 		time.Sleep(15 * time.Second)
 	}
-
 }
