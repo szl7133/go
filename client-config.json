@@ -1,0 +1,5 @@
+{
+  "host_name": "个人PC",
+  "report_url": "http://127.0.0.1:8080/alarm",
+  "report_interval": 15
+}

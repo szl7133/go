@@ -3,31 +3,36 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
-	"net/http"
-	"time"
-
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/host"
 	"github.com/shirou/gopsutil/mem"
+	"io/ioutil"
+	"net/http"
+	"time"
 )
 
-// 定义上报数据json体
+type Config struct {
+	HostName       string `json:"host_name"`
+	ReportURL      string `json:"report_url"`
+	ReportInterval int    `json:"report_interval"`
+}
+
 type LogEntry struct {
-	ResultTime string `json:"当前时间"`
+	HostName   string `json:"主机名称"`
 	HostInfo   string `json:"主机信息"`
 	MemInfo    string `json:"内存信息"`
 	CPUInfo    string `json:"CPU信息"`
-	DiskInfo   string `json:"磁盘信息"`
-	DiskIOInfo string `json:"磁盘I/O信息"`
+	DiskInfo   string `json:"磁盘信息"`    // JSON string
+	DiskIOInfo string `json:"磁盘I/O信息"` // JSON string
+	ResultTime string `json:"当前时间"`
 }
 
 // 获取内存信息
 func getMemInfo() map[string]string {
 	memdata := make(map[string]string)
-
 	v, _ := mem.VirtualMemory()
 
 	total := handerUnit(v.Total, NUM_GB, "G")
@@ -65,11 +70,11 @@ func getCpuInfo(percent string) []map[string]string {
 }
 
 // 获取主机信息
-func getHostInfo() map[string]string {
+func getHostInfo(config Config) map[string]string {
 	hostdata := make(map[string]string)
 
 	hInfo, _ := host.Info()
-	hostdata["主机名称"] = hInfo.Hostname
+	hostdata["主机名称"] = config.HostName
 	hostdata["系统"] = hInfo.OS
 	hostdata["平台"] = hInfo.Platform + "-" + hInfo.PlatformVersion + " " + hInfo.PlatformFamily
 	hostdata["内核"] = hInfo.KernelArch
@@ -131,15 +136,24 @@ func handerUnit(value uint64, unit int, unitStr string) string {
 }
 
 func main() {
+	// 读取命令行参数
+	configFile := flag.String("config", "client-config.json", "配置文件路径")
+	flag.Parse()
+
+	// 读取配置文件
+	config, err := loadConfig(*configFile)
+	if err != nil {
+		fmt.Printf("Failed to load config: %v\n", err)
+		return
+	}
+
 	for {
-		// 获取当前时间
 		resultTime := time.Now().Format("2006-01-02 15:04:05")
 
 		// 获取内存信息
 		memInfo, _ := json.Marshal(getMemInfo())
-
 		// 获取主机信息
-		hostInfo, _ := json.Marshal(getHostInfo())
+		hostInfo, _ := json.Marshal(getHostInfo(config))
 
 		// 获取CPU使用率
 		cpuPercents, _ := cpu.Percent(0, false)
@@ -151,35 +165,44 @@ func main() {
 		// 获取磁盘I/O信息
 		diskIOInfo, _ := json.Marshal(getDiskIOInfo())
 
-		// 构建LogEntry对象
 		logEntry := LogEntry{
-			ResultTime: resultTime,
+			HostName:   config.HostName,
 			HostInfo:   string(hostInfo),
 			MemInfo:    string(memInfo),
 			CPUInfo:    string(cpuInfo),
 			DiskInfo:   string(diskInfo),
 			DiskIOInfo: string(diskIOInfo),
+			ResultTime: resultTime,
 		}
 
-		// 将LogEntry对象转换为JSON
 		logEntryJSON, err := json.Marshal(logEntry)
 		if err != nil {
 			fmt.Printf("json marshal failed, err:%v\n", err)
 			return
 		}
 
-		// 发送HTTP POST请求
-		resp, err := http.Post("http://127.0.0.1:8080/alarm", "application/json", bytes.NewBuffer(logEntryJSON))
+		fmt.Printf(config.ReportURL)
+
+		resp, err := http.Post(config.ReportURL, "application/json", bytes.NewBuffer(logEntryJSON))
 		if err != nil {
 			fmt.Printf("send post request failed, err:%v\n", err)
 			return
 		}
 		defer resp.Body.Close()
 
-		// 打印响应状态
 		fmt.Println("Response status:", resp.Status)
 
-		// 等待15秒
-		time.Sleep(15 * time.Second)
+		time.Sleep(time.Duration(config.ReportInterval) * time.Second)
 	}
+}
+
+// 读取配置文件
+func loadConfig(configFile string) (Config, error) {
+	var config Config
+	configData, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		return config, err
+	}
+	err = json.Unmarshal(configData, &config)
+	return config, err
 }
