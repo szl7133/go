@@ -14,14 +14,14 @@ import (
 	"github.com/shirou/gopsutil/mem"
 )
 
-// LogEntry represents the structure of the log data
+// 定义上报数据json体
 type LogEntry struct {
-	CurrentTime string              `json:"当前时间"`
-	MemInfo     map[string]string   `json:"内存信息"`
-	HostInfo    map[string]string   `json:"主机信息"`
-	CPUInfo     []map[string]string `json:"CPU信息"`
-	DiskInfo    string              `json:"磁盘信息"`    // JSON string
-	DiskIOInfo  string              `json:"磁盘I/O信息"` // JSON string
+	ResultTime string `json:"当前时间"`
+	HostInfo   string `json:"主机信息"`
+	MemInfo    string `json:"内存信息"`
+	CPUInfo    string `json:"CPU信息"`
+	DiskInfo   string `json:"磁盘信息"`
+	DiskIOInfo string `json:"磁盘I/O信息"`
 }
 
 // 获取内存信息
@@ -133,17 +133,17 @@ func handerUnit(value uint64, unit int, unitStr string) string {
 func main() {
 	for {
 		// 获取当前时间
-		currentTime := time.Now().Format("2006-01-02 15:04:05")
+		resultTime := time.Now().Format("2006-01-02 15:04:05")
 
 		// 获取内存信息
-		memInfo := getMemInfo()
+		memInfo, _ := json.Marshal(getMemInfo())
 
 		// 获取主机信息
-		hostInfo := getHostInfo()
+		hostInfo, _ := json.Marshal(getHostInfo())
 
 		// 获取CPU使用率
 		cpuPercents, _ := cpu.Percent(0, false)
-		cpuInfo := getCpuInfo(fmt.Sprintf("%.2f", cpuPercents[0]))
+		cpuInfo, _ := json.Marshal(getCpuInfo(fmt.Sprintf("%.2f", cpuPercents[0])))
 
 		// 获取磁盘信息
 		diskInfo, _ := json.Marshal(getDiskInfo())
@@ -153,12 +153,12 @@ func main() {
 
 		// 构建LogEntry对象
 		logEntry := LogEntry{
-			CurrentTime: currentTime,
-			MemInfo:     memInfo,
-			HostInfo:    hostInfo,
-			CPUInfo:     cpuInfo,
-			DiskInfo:    string(diskInfo),
-			DiskIOInfo:  string(diskIOInfo),
+			ResultTime: resultTime,
+			HostInfo:   string(hostInfo),
+			MemInfo:    string(memInfo),
+			CPUInfo:    string(cpuInfo),
+			DiskInfo:   string(diskInfo),
+			DiskIOInfo: string(diskIOInfo),
 		}
 
 		// 将LogEntry对象转换为JSON
@@ -169,7 +169,7 @@ func main() {
 		}
 
 		// 发送HTTP POST请求
-		resp, err := http.Post("http://127.0.0.1:8080/log", "application/json", bytes.NewBuffer(logEntryJSON))
+		resp, err := http.Post("http://127.0.0.1:8080/alarm", "application/json", bytes.NewBuffer(logEntryJSON))
 		if err != nil {
 			fmt.Printf("send post request failed, err:%v\n", err)
 			return

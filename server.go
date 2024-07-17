@@ -12,55 +12,36 @@ import (
 )
 
 type LogEntry struct {
-	CurrentTime string              `json:"当前时间"`
-	MemInfo     map[string]string   `json:"内存信息"`
-	HostInfo    map[string]string   `json:"主机信息"`
-	CPUInfo     []map[string]string `json:"CPU信息"`
-	DiskInfo    string              `json:"磁盘信息"`    // JSON string
-	DiskIOInfo  string              `json:"磁盘I/O信息"` // JSON string
+	ResultTime string `json:"当前时间"`
+	HostInfo   string `json:"主机信息"`
+	MemInfo    string `json:"内存信息"`
+	CPUInfo    string `json:"CPU信息"`
+	DiskInfo   string `json:"磁盘信息"`    // JSON string
+	DiskIOInfo string `json:"磁盘I/O信息"` // JSON string
 }
 
 func saveLogEntryToDB(db *sql.DB, entry LogEntry) error {
 	query := `INSERT INTO alarm (
-		result_time, mem_total, mem_available, mem_used, mem_free, mem_used_percent, 
-		host_name, host_os, host_platform, host_kernel, cpu_model, cpu_cores, cpu_usage, 
-		disk_info, disk_io_info
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		result_time, host_info, mem_info, 
+		cpu_info, disk_info, disk_io_info
+	) VALUES (?, ?, ?, ?, ?, ?)`
 
 	// 打印执行的SQL语句
-	fullQuery := fmt.Sprintf("INSERT INTO alarm (result_time, mem_total, mem_available, mem_used, mem_free, mem_used_percent, host_name, host_os, host_platform, host_kernel, cpu_model, cpu_cores, cpu_usage, disk_info, disk_io_info) VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')",
-		entry.CurrentTime,
-		entry.MemInfo["总量"],
-		entry.MemInfo["可用"],
-		entry.MemInfo["已使用"],
-		entry.MemInfo["空闲"],
-		entry.MemInfo["使用率"],
-		entry.HostInfo["主机名称"],
-		entry.HostInfo["系统"],
-		entry.HostInfo["平台"],
-		entry.HostInfo["内核"],
-		entry.CPUInfo[0]["型号"],
-		entry.CPUInfo[0]["数量"],
-		entry.CPUInfo[0]["使用率"],
+	fullQuery := fmt.Sprintf("INSERT INTO alarm (result_time, host_info, mem_info, cpu_info, disk_info, disk_io_info) VALUES ('%s', '%s', '%s', '%s', '%s', '%s')",
+		entry.ResultTime,
+		entry.HostInfo,
+		entry.MemInfo,
+		entry.CPUInfo,
 		entry.DiskInfo,
 		entry.DiskIOInfo,
 	)
 	fmt.Println("Executing SQL: ", fullQuery)
 
 	_, err := db.Exec(query,
-		entry.CurrentTime,
-		entry.MemInfo["总量"],
-		entry.MemInfo["可用"],
-		entry.MemInfo["已使用"],
-		entry.MemInfo["空闲"],
-		entry.MemInfo["使用率"],
-		entry.HostInfo["主机名称"],
-		entry.HostInfo["系统"],
-		entry.HostInfo["平台"],
-		entry.HostInfo["内核"],
-		entry.CPUInfo[0]["型号"],
-		entry.CPUInfo[0]["数量"],
-		entry.CPUInfo[0]["使用率"],
+		entry.ResultTime,
+		entry.HostInfo,
+		entry.MemInfo,
+		entry.CPUInfo,
 		entry.DiskInfo,
 		entry.DiskIOInfo,
 	)
@@ -110,7 +91,7 @@ func reportHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	http.HandleFunc("/log", reportHandler)
+	http.HandleFunc("/alarm", reportHandler)
 	fmt.Println("Server listening on port 8080...")
 	err := http.ListenAndServe(":8080", nil)
 	if err != nil {
