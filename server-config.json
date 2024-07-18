@@ -1,5 +1,5 @@
 {
   "FeishuWebhookURL": "https://open.feishu.cn/open-apis/bot/v2/hook/a1a359e1-9c79-483a-81cd-b931c8517634",
   "Mysql_Dsn": "root:SDgd@2023@tcp(192.168.1.229:3306)/go",
-  "Usage_Max": 80
+  "Usage_Max": 60
 }

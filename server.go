@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/google/uuid"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -13,8 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	_ "github.com/go-sql-driver/mysql"
 )
 
 type Config struct {
@@ -26,6 +26,7 @@ type Config struct {
 var config Config
 
 type LogEntry struct {
+	ID         string `json:"id"`
 	HostName   string `json:"主机名称"`
 	HostInfo   string `json:"主机信息"`
 	MemInfo    string `json:"内存信息"`
@@ -33,17 +34,6 @@ type LogEntry struct {
 	DiskInfo   string `json:"磁盘信息"`    // JSON string
 	DiskIOInfo string `json:"磁盘I/O信息"` // JSON string
 	ResultTime string `json:"当前时间"`
-}
-
-// 读取配置文件
-func loadConfig(configFile string) (Config, error) {
-	var config Config
-	configData, err := ioutil.ReadFile(configFile)
-	if err != nil {
-		return config, err
-	}
-	err = json.Unmarshal(configData, &config)
-	return config, err
 }
 
 // 发送告警到 Feishu
@@ -115,12 +105,13 @@ func checkMemUsage(hostname, memInfoJSON string, threshold float64) {
 
 func saveLogEntryToDB(db *sql.DB, entry LogEntry) error {
 	query := `INSERT INTO alarm (
-		host_name, host_info, mem_info, 
+		id, host_name, host_info, mem_info, 
 		cpu_info, disk_info, disk_io_info, result_time
-	) VALUES (?, ?, ?, ?, ?, ?, ?)`
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 
 	// 打印执行的SQL语句
-	fullQuery := fmt.Sprintf("INSERT INTO alarm (host_name, host_info, mem_info, cpu_info, disk_info, disk_io_info,result_time) VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s')",
+	fullQuery := fmt.Sprintf("INSERT INTO alarm (id, host_name, host_info, mem_info, cpu_info, disk_info, disk_io_info,result_time) VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')",
+		entry.ID,
 		entry.HostName,
 		entry.HostInfo,
 		entry.MemInfo,
@@ -132,6 +123,7 @@ func saveLogEntryToDB(db *sql.DB, entry LogEntry) error {
 	fmt.Println("Executing SQL: ", fullQuery)
 
 	_, err := db.Exec(query,
+		entry.ID,
 		entry.HostName,
 		entry.HostInfo,
 		entry.MemInfo,
@@ -163,6 +155,10 @@ func reportHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to unmarshal JSON", http.StatusBadRequest)
 		return
 	}
+
+	// 生成 UUID
+	logEntry.ID = uuid.New().String()
+
 	// 打印日志条目
 	fmt.Printf("Received log entry: %+v\n", logEntry)
 
