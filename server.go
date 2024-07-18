@@ -7,13 +7,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 )
+
+type Config struct {
+	FeishuWebhookURL string  `json:"FeishuWebhookURL"`
+	Mysql_Dsn        string  `json:"Mysql_Dsn"`
+	Usage_Max        float64 `json:"Usage_Max"`
+}
+
+var config Config
 
 type LogEntry struct {
 	HostName   string `json:"主机名称"`
@@ -25,7 +35,16 @@ type LogEntry struct {
 	ResultTime string `json:"当前时间"`
 }
 
-const FeishuWebhookURL = "https://open.feishu.cn/open-apis/bot/v2/hook/a1a359e1-9c79-483a-81cd-b931c8517634"
+// 读取配置文件
+func loadConfig(configFile string) (Config, error) {
+	var config Config
+	configData, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		return config, err
+	}
+	err = json.Unmarshal(configData, &config)
+	return config, err
+}
 
 // 发送告警到 Feishu
 func sendAlertToFeishu(alertTitle, alertContent string) {
@@ -62,7 +81,7 @@ func sendAlertToFeishu(alertTitle, alertContent string) {
 		return
 	}
 
-	resp, err := http.Post(FeishuWebhookURL, "application/json", bytes.NewBuffer(alertJSON))
+	resp, err := http.Post(config.FeishuWebhookURL, "application/json", bytes.NewBuffer(alertJSON))
 	if err != nil {
 		fmt.Printf("Failed to send alert to Feishu: %v\n", err)
 		return
@@ -144,13 +163,10 @@ func reportHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to unmarshal JSON", http.StatusBadRequest)
 		return
 	}
-	fmt.Printf("1")
 	// 打印日志条目
 	fmt.Printf("Received log entry: %+v\n", logEntry)
-	fmt.Printf("2")
-	// 连接到数据库
-	dsn := "root:SDgd@2023@tcp(192.168.1.229:3306)/go"
-	db, err := sql.Open("mysql", dsn)
+
+	db, err := sql.Open("mysql", config.Mysql_Dsn)
 	if err != nil {
 		http.Error(w, "Failed to connect to database", http.StatusInternalServerError)
 		return
@@ -158,7 +174,7 @@ func reportHandler(w http.ResponseWriter, r *http.Request) {
 	defer db.Close()
 
 	// 触发内存使用率告警
-	checkMemUsage(logEntry.HostName, logEntry.MemInfo, 40.0)
+	checkMemUsage(logEntry.HostName, logEntry.MemInfo, config.Usage_Max)
 
 	// 保存日志条目到数据库
 	err = saveLogEntryToDB(db, logEntry)
@@ -171,10 +187,27 @@ func reportHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	http.HandleFunc("/alarm", reportHandler)
-	fmt.Println("Server listening on port 8080...")
-	err := http.ListenAndServe(":8080", nil)
+
+	// Read configuration file
+	configFile := "server-config.json"
+	file, err := os.Open(configFile)
 	if err != nil {
+		log.Fatalf("Failed to open config file: %v", err)
+	}
+	defer file.Close()
+
+	decoder := json.NewDecoder(file)
+	err = decoder.Decode(&config)
+	if err != nil {
+		log.Fatalf("Failed to decode config file: %v", err)
+	}
+
+	http.HandleFunc("/alarm", reportHandler)
+
+	fmt.Println("Server listening on port 8080...")
+
+	http_err := http.ListenAndServe(":8080", nil)
+	if http_err != nil {
 		fmt.Println("Error starting server:", err)
 	}
 }

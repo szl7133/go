@@ -181,8 +181,6 @@ func main() {
 			return
 		}
 
-		fmt.Printf(config.ReportURL)
-
 		resp, err := http.Post(config.ReportURL, "application/json", bytes.NewBuffer(logEntryJSON))
 		if err != nil {
 			fmt.Printf("send post request failed, err:%v\n", err)
