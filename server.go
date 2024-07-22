@@ -1,4 +1,3 @@
-// 服务器端代码
 package main
 
 import (
@@ -20,12 +19,14 @@ import (
 type Config struct {
 	FeishuWebhookURL string  `json:"FeishuWebhookURL"`
 	Mysql_Dsn        string  `json:"Mysql_Dsn"`
-	Usage_Max        float64 `json:"Usage_Max"`
+	Mem_Usage_Max    float64 `json:"Mem_Usage_Max"`
+	Cpu_Usage_Max    float64 `json:"Cpu_Usage_Max"`
+	Disk_Usage_Max   float64 `json:"Disk_Usage_Max"`
 }
 
 var config Config
 
-type LogEntry struct {
+type DataEntry struct {
 	ID         string `json:"id"`
 	HostName   string `json:"主机名称"`
 	HostInfo   string `json:"主机信息"`
@@ -82,29 +83,98 @@ func sendAlertToFeishu(alertTitle, alertContent string) {
 }
 
 // 检测内存使用率是否达到告警线
-func checkMemUsage(hostname, memInfoJSON string, threshold float64) {
+func checkMemUsage(hostname, memInfoJSON string, threshold float64) bool {
 	var memInfo map[string]string
 	err := json.Unmarshal([]byte(memInfoJSON), &memInfo)
 	if err != nil {
 		fmt.Printf("Failed to unmarshal mem info JSON: %v\n", err)
-		return
+		return false
 	}
 	usageStr := memInfo["使用率"]
 	usageStr = strings.TrimSuffix(usageStr, "%")
 	usage, err := strconv.ParseFloat(usageStr, 64)
 	if err != nil {
 		fmt.Printf("Failed to parse mem usage: %v\n", err)
-		return
+		return false
 	}
 
 	if usage > threshold {
 		alertContent := fmt.Sprintf("告警信息: 主机 %s 的内存使用率超过了%.2f%%，当前值为: %.2f%%\n", hostname, threshold, usage)
 		sendAlertToFeishu("内存使用超限", alertContent)
+		return true
 	}
+	return false
 }
 
-func saveLogEntryToDB(db *sql.DB, entry LogEntry) error {
-	query := `INSERT INTO alarm (
+// 检测CPU使用率是否达到告警线
+func checkCpuUsage(hostname, cpuInfoJSON string, threshold float64) bool {
+	// 反序列化 CPU 信息数组
+	var cpuInfos []map[string]string
+	err := json.Unmarshal([]byte(cpuInfoJSON), &cpuInfos)
+	if err != nil {
+		fmt.Printf("Failed to unmarshal CPU info JSON: %v\n", err)
+		return false
+	}
+
+	for _, cpuInfo := range cpuInfos {
+		usageStr := cpuInfo["使用率"]
+		usageStr = strings.TrimSuffix(usageStr, "%")
+		usage, err := strconv.ParseFloat(usageStr, 64)
+		if err != nil {
+			fmt.Printf("Failed to parse CPU usage: %v\n", err)
+			continue
+		}
+
+		if usage > threshold {
+			alertContent := fmt.Sprintf("告警信息: 主机 %s 的 CPU 使用率超过了 %.2f%%，当前值为: %.2f%%\n", hostname, threshold, usage)
+			sendAlertToFeishu("CPU使用超限", alertContent)
+			return true
+		}
+	}
+
+	return false
+}
+
+// 检测磁盘空间使用率是否达到告警线
+func checkDiskUsage(hostname, diskInfoJSON string, threshold float64, db *sql.DB, dataEntryID string, resultTime string) bool {
+	var diskInfos []map[string]string
+	err := json.Unmarshal([]byte(diskInfoJSON), &diskInfos)
+	if err != nil {
+		fmt.Printf("Failed to unmarshal disk info JSON: %v\n", err)
+		return false
+	}
+
+	alerts := []string{}
+	for _, diskInfo := range diskInfos {
+		usageStr := diskInfo["使用率"]
+		usageStr = strings.TrimSuffix(usageStr, "%")
+		usage, err := strconv.ParseFloat(usageStr, 64)
+		if err != nil {
+			fmt.Printf("Failed to parse disk usage: %v\n", err)
+			continue
+		}
+
+		if usage > threshold {
+			alertContent := fmt.Sprintf("告警信息: 主机 %s 的挂载盘 %s 磁盘空间使用率超过了 %.2f%%，当前值为: %.2f%%", hostname, diskInfo["挂载点"], threshold, usage)
+			alerts = append(alerts, alertContent)
+		}
+	}
+
+	if len(alerts) > 0 {
+		for _, alert := range alerts {
+			sendAlertToFeishu("磁盘空间使用超限", alert)
+			ID := uuid.New().String()
+			saveLogEntryToDB(db, ID, dataEntryID, hostname, "磁盘空间使用超限告警", alert, resultTime)
+		}
+		return true
+	}
+
+	return false
+}
+
+// 存储监控数据到数据库
+func saveDataEntryToDB(db *sql.DB, entry DataEntry) error {
+	query := `INSERT INTO alarm_data (
 		id, host_name, host_info, mem_info, 
 		cpu_info, disk_info, disk_io_info, result_time
 	) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
@@ -135,6 +205,23 @@ func saveLogEntryToDB(db *sql.DB, entry LogEntry) error {
 	return err
 }
 
+// 存储告警记录到数据库
+func saveLogEntryToDB(db *sql.DB, ID string, Data_ID string, HostName string, Alarm_Type string, Alarm_Data string, ResultTime string) error {
+	query := `INSERT INTO alarm_log (
+		id, data_id, host_name, alarm_type, alarm_data, result_time
+	) VALUES (?, ?, ?, ?, ?, ?)`
+
+	_, err := db.Exec(query,
+		ID,
+		Data_ID,
+		HostName,
+		Alarm_Type,
+		Alarm_Data,
+		ResultTime,
+	)
+	return err
+}
+
 func reportHandler(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != http.MethodPost {
@@ -149,18 +236,18 @@ func reportHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	var logEntry LogEntry
-	err = json.Unmarshal(body, &logEntry)
+	var DataEntry DataEntry
+	err = json.Unmarshal(body, &DataEntry)
 	if err != nil {
 		http.Error(w, "Failed to unmarshal JSON", http.StatusBadRequest)
 		return
 	}
 
 	// 生成 UUID
-	logEntry.ID = uuid.New().String()
+	DataEntry.ID = uuid.New().String()
 
 	// 打印日志条目
-	fmt.Printf("Received log entry: %+v\n", logEntry)
+	fmt.Printf("Received log entry: %+v\n", DataEntry)
 
 	db, err := sql.Open("mysql", config.Mysql_Dsn)
 	if err != nil {
@@ -169,15 +256,31 @@ func reportHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	// 触发内存使用率告警
-	checkMemUsage(logEntry.HostName, logEntry.MemInfo, config.Usage_Max)
-
 	// 保存日志条目到数据库
-	err = saveLogEntryToDB(db, logEntry)
+	err = saveDataEntryToDB(db, DataEntry)
 	if err != nil {
 		http.Error(w, "Failed to save log entry to database", http.StatusInternalServerError)
 		return
 	}
+
+	// 检测内存使用率
+	if checkMemUsage(DataEntry.HostName, DataEntry.MemInfo, config.Mem_Usage_Max) {
+		Alarm_Type := "内存使用超限告警"
+		ID := uuid.New().String()
+		// 保存告警记录
+		saveLogEntryToDB(db, ID, DataEntry.ID, DataEntry.HostName, Alarm_Type, DataEntry.MemInfo, DataEntry.ResultTime)
+	}
+
+	// 检测CPU使用率
+	if checkCpuUsage(DataEntry.HostName, DataEntry.CPUInfo, config.Cpu_Usage_Max) {
+		Alarm_Type := "CPU使用超限告警"
+		ID := uuid.New().String()
+		// 保存告警记录
+		saveLogEntryToDB(db, ID, DataEntry.ID, DataEntry.HostName, Alarm_Type, DataEntry.CPUInfo, DataEntry.ResultTime)
+	}
+
+	// 检测磁盘空间使用率
+	checkDiskUsage(DataEntry.HostName, DataEntry.DiskInfo, config.Disk_Usage_Max, db, DataEntry.ID, DataEntry.ResultTime)
 
 	w.WriteHeader(http.StatusOK)
 }

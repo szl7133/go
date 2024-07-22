@@ -183,8 +183,10 @@ func main() {
 
 		resp, err := http.Post(config.ReportURL, "application/json", bytes.NewBuffer(logEntryJSON))
 		if err != nil {
-			fmt.Printf("send post request failed, err:%v\n", err)
-			return
+			fmt.Printf("Failed to send post request, will retry in 10 seconds. Error: %v\n", err)
+			//重试机制
+			time.Sleep(10 * time.Second)
+			continue
 		}
 		defer resp.Body.Close()
 
